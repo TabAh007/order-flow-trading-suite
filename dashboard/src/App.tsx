@@ -13,38 +13,16 @@ import {
   Play
 } from 'lucide-react';
 import './App.css';
-
-interface Trade {
-  type: string;
-  price: number;
-  profit: number;
-}
-
-interface BacktestResults {
-  initial_balance: number;
-  final_balance: number;
-  net_profit: number;
-  total_trades: number;
-  winning_trades: number;
-  losing_trades: number;
-  win_rate: number;
-  profit_factor: number;
-  trades: Trade[];
-}
-
-interface OrderFlowData {
-  poc: number;
-  vah: number;
-  val: number;
-  klines: Array<{
-    timestamp: string;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
-  }>;
-}
+import {
+  fetchKlinesFromBinance,
+  calculateVolumeProfile,
+  runBacktest
+} from './clientEngine';
+import type {
+  Kline,
+  BacktestResults,
+  OrderFlowData
+} from './clientEngine';
 
 function App() {
   const [symbol, setSymbol] = useState('XRPUSDT');
@@ -54,20 +32,22 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BacktestResults | null>(null);
   const [orderFlow, setOrderFlow] = useState<OrderFlowData | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(true);
 
   // Fetch initial profile/S&R metrics
   const fetchOrderFlow = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/order_flow?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOrderFlow(data);
-        setConnected(true);
-      } else {
-        setConnected(false);
-      }
-    } catch {
+      const klines = await fetchKlinesFromBinance(symbol, interval, limit);
+      const { poc, vah, val } = calculateVolumeProfile(klines, 0.70);
+      setOrderFlow({
+        poc,
+        vah,
+        val,
+        klines
+      });
+      setConnected(true);
+    } catch (err) {
+      console.error(err);
       setConnected(false);
     }
   };
@@ -79,30 +59,19 @@ function App() {
   const handleBacktest = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/backtest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          interval,
-          limit,
-          imbalance_ratio: imbalanceRatio
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setResults(data);
-        setConnected(true);
-      } else {
-        alert("Failed to run backtest");
-      }
+      const klines = await fetchKlinesFromBinance(symbol, interval, limit);
+      const results = runBacktest(klines, imbalanceRatio);
+      setResults(results);
+      setConnected(true);
     } catch (err) {
       console.error(err);
-      alert("Error connecting to API server");
+      alert("Error fetching data or running backtest");
+      setConnected(false);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="dashboard-container">
@@ -172,7 +141,7 @@ function App() {
         <div className="sidebar-footer">
           <div className={`status-indicator ${connected ? 'status-online' : 'status-offline'}`}>
             <span className="status-dot"></span>
-            {connected ? 'API Connected (8000)' : 'API Offline'}
+            {connected ? 'Live Engine (Client-Side)' : 'Network Offline'}
           </div>
         </div>
       </aside>
