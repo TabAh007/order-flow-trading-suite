@@ -31,6 +31,55 @@ This repository contains the complete trading ecosystem:
 
 ---
 
+## 📊 Data Flow & Architecture
+
+The diagrams below demonstrate how data flows through the application layers:
+
+```mermaid
+flowchart TD
+    classDef external fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef engine fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef api fill:#bfb,stroke:#333,stroke-width:1px;
+    classDef ui fill:#fbb,stroke:#333,stroke-width:1px;
+
+    Binance[Binance Public API]:::external
+    
+    subgraph BackendEngine [Python Core Engine]
+        Fetcher[BinanceDataFetcher\nengine/data_fetcher.py]:::engine
+        Calculator[OrderFlowCalculator\nengine/order_flow.py]:::engine
+        Backtester[OrderFlowBacktester\nengine/backtester.py]:::engine
+    end
+
+    subgraph Server [API Layer]
+        FastAPI[FastAPI Server\nmain_api.py]:::api
+    end
+
+    subgraph Clients [Frontend Dashboards]
+        ReactDash[React Dashboard\nhosted on GitHub Pages]:::ui
+        StreamlitDash[Streamlit Dashboard\napp.py]:::ui
+    end
+
+    %% Data flow mapping
+    Binance -->|REST: Klines / aggTrades| Fetcher
+    Fetcher -->|OHLCV & Trade Raw Data| Calculator
+    Calculator -->|Footprint & Profile Metrics| Backtester
+    Backtester -->|Simulated Results| FastAPI
+    FastAPI -->|JSON Payload API| ReactDash
+    Calculator -->|Direct Engine Calls| StreamlitDash
+    Backtester -->|Direct Engine Calls| StreamlitDash
+```
+
+### Steps of Execution Flow:
+1. **Data Ingestion**: `BinanceDataFetcher` fetches historical OHLCV candles (klines) and aggregate transaction records directly from Binance's API endpoints.
+2. **Profile & footprint Calculations**: `OrderFlowCalculator` filters transaction blocks, rounds prices to tick size, builds footprint grids (Bids vs. Asks), and calculates Point of Control (POC), Value Area (VAH/VAL), and buying/selling imbalances (based on configured imbalance ratios).
+3. **Execution & Backtesting**: The engine aggregates footprint calculations to execute simulated entries and exits using target risk limits and ATR-based stops.
+4. **API Serving**: FastAPI wraps these calculations inside high-speed HTTP routes.
+5. **Visualization**:
+   - The **Vite React Dashboard** query endpoints to update interactive metrics (POC, VAH/VAL) and execute strategy backtests.
+   - The **Streamlit Dashboard** communicates directly with the Python engine classes to display charts on the host environment.
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
