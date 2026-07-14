@@ -1,0 +1,32 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache & Logs
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Node dependencies & builds
+node_modules/
+dist/
+build/
+.oxlintrc.json
+
+# IDE / System files
+.DS_Store
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Local developer agents config (symlinks, etc)
+.agents/
+.gemini/
+.claude/

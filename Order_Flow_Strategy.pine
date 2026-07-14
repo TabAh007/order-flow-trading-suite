@@ -1,0 +1,336 @@
+//@version=5
+strategy("Professional Order Flow Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=1, max_bars_back=500)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+// Order Flow Core Settings - Optimized for XRP
+volume_cluster_threshold = input.float(2.2, "Volume Cluster Threshold", minval=1.5, maxval=4.0, step=0.1, tooltip="Lower threshold for XRP's frequent volume spikes")
+imbalance_ratio = input.float(2.5, "Imbalance Ratio", minval=1.8, maxval=4.0, step=0.1, tooltip="Reduced ratio for XRP's volatile order flow")
+hvn_lookback = input.int(15, "High Volume Node Lookback", minval=8, maxval=25, tooltip="Extended lookback for XRP's momentum patterns")
+
+// Volume Profile Settings - XRP Optimized
+vp_lookback = input.int(35, "Volume Profile Lookback", minval=15, maxval=80)
+poc_sensitivity = input.float(0.15, "POC Sensitivity %", minval=0.08, maxval=0.4, step=0.02, tooltip="Higher sensitivity for XRP's price action")
+
+// Trading Setup Selection
+enable_volume_clusters = input.bool(true, "Enable Volume Cluster Setups")
+enable_imbalance_trades = input.bool(true, "Enable Imbalance Setups")
+enable_unfinished_business = input.bool(true, "Enable Unfinished Business")
+enable_absorption = input.bool(true, "Enable Absorption Setups")
+
+// Risk Management - XRP Optimized
+risk_per_trade = input.float(0.8, "Risk Per Trade %", minval=0.3, maxval=2.5, step=0.1, tooltip="Conservative risk for XRP volatility")
+reward_ratio = input.float(2.5, "Risk:Reward Ratio", minval=1.8, maxval=4.0, step=0.2, tooltip="Adjusted for XRP's quick moves")
+max_daily_trades = input.int(5, "Max Daily Trades", minval=2, maxval=12, tooltip="Increased for XRP's intraday opportunities")
+
+// Display Settings
+show_footprints = input.bool(true, "Show Footprint Data")
+show_imbalances = input.bool(true, "Show Imbalances")
+show_volume_clusters = input.bool(true, "Show Volume Clusters")
+show_unfinished_business = input.bool(true, "Show Unfinished Business")
+
+// ============================================================================
+// CORE ORDER FLOW CALCULATIONS
+// ============================================================================
+
+// Volume Analysis
+volume_ma = ta.sma(volume, 20)
+volume_percentile_80 = ta.percentile_nearest_rank(volume, 100, 80)
+volume_percentile_90 = ta.percentile_nearest_rank(volume, 100, 90)
+
+// Footprint Data Simulation (Bid/Ask Volume Approximation)
+// In real order flow: bid_volume = selling pressure, ask_volume = buying pressure
+bid_volume = close < open ? volume * 0.6 : volume * 0.4
+ask_volume = close > open ? volume * 0.6 : volume * 0.4
+total_volume = bid_volume + ask_volume
+
+// Delta Calculation (Professional Order Flow)
+delta = ask_volume - bid_volume
+cumulative_delta = ta.cum(delta)
+delta_change = delta - delta[1]
+
+// Volume Clusters Detection
+is_volume_cluster = volume > volume_ma * volume_cluster_threshold and volume > volume_percentile_80
+
+// High Volume Nodes (HVN) Detection
+hvn_volume = ta.highest(volume, hvn_lookback)
+is_hvn = volume == hvn_volume and volume > volume_percentile_90
+
+// Imbalance Detection (300%+ difference between bid/ask)
+imbalance_up = ask_volume > bid_volume * imbalance_ratio and volume > volume_ma
+imbalance_down = bid_volume > ask_volume * imbalance_ratio and volume > volume_ma
+has_imbalance = imbalance_up or imbalance_down
+
+// Point of Control (POC) - Highest volume price level
+vwap = ta.vwap(hlc3)
+poc_distance = math.abs(close - vwap) / close
+
+// Absorption Detection (Large volume with small price movement)
+price_range = high - low
+avg_range = ta.sma(price_range, 10)
+is_absorption = volume > volume_percentile_90 and price_range < avg_range * 0.5
+
+// Unfinished Business Detection (Failed auctions at highs/lows)
+session_high = ta.highest(high, 20)
+session_low = ta.lowest(low, 20)
+failed_high = high == session_high and close < high * 0.995 and volume > volume_ma
+failed_low = low == session_low and close > low * 1.005 and volume > volume_ma
+unfinished_business = failed_high or failed_low
+
+// Volume Profile Levels
+vp_high = ta.highest(high, vp_lookback)
+vp_low = ta.lowest(low, vp_lookback)
+vp_range = vp_high - vp_low
+value_area_high = vwap + vp_range * poc_sensitivity
+value_area_low = vwap - vp_range * poc_sensitivity
+
+// ATR for dynamic stops
+atr = ta.atr(14)
+
+// Trend Filter - XRP Optimized
+trend_ma_fast = ta.sma(close, 21)  // Faster MA for XRP's quick moves
+trend_ma_slow = ta.sma(close, 50)
+uptrend = close > trend_ma_fast and trend_ma_fast > trend_ma_slow
+downtrend = close < trend_ma_fast and trend_ma_fast < trend_ma_slow
+sideways = not uptrend and not downtrend
+
+// Volume Analysis - Enhanced for XRP
+volume_ratio = volume / volume_ma
+high_volume = volume > volume_ma * 1.8  // Lower threshold for XRP
+extreme_volume = volume > volume_ma * 3.5  // XRP volume spikes
+
+// Momentum Filter for XRP
+rsi = ta.rsi(close, 14)
+oversold = rsi < 35  // More sensitive for XRP
+overbought = rsi > 65
+
+// VWAP with deviation bands for XRP
+vwap_current = ta.vwap(hlc3)
+vwap_std = ta.stdev(close, 20)
+vwap_upper = vwap_current + vwap_std * 1.5
+vwap_lower = vwap_current - vwap_std * 1.5
+
+// ============================================================================
+// PROFESSIONAL ORDER FLOW SETUPS
+// ============================================================================
+
+// Daily Trade Counter
+var int daily_trades = 0
+if dayofweek != dayofweek[1]
+    daily_trades := 0
+
+// Setup 1: Volume Cluster Breakout - XRP Enhanced
+volume_cluster_long = enable_volume_clusters and is_volume_cluster and imbalance_up and close > vwap_current and uptrend and not overbought and daily_trades < max_daily_trades
+volume_cluster_short = enable_volume_clusters and is_volume_cluster and imbalance_down and close < vwap_current and downtrend and not oversold and daily_trades < max_daily_trades
+
+// Setup 2: Imbalance Continuation - XRP Enhanced
+imbalance_long = enable_imbalance_trades and imbalance_up and delta > 0 and close > value_area_high and (uptrend or extreme_volume) and daily_trades < max_daily_trades
+imbalance_short = enable_imbalance_trades and imbalance_down and delta < 0 and close < value_area_low and (downtrend or extreme_volume) and daily_trades < max_daily_trades
+
+// Setup 3: Unfinished Business Reversal - XRP Enhanced
+unfinished_long = enable_unfinished_business and failed_low and delta_change > 0 and close > low * 1.001 and (oversold or close < vwap_lower) and daily_trades < max_daily_trades
+unfinished_short = enable_unfinished_business and failed_high and delta_change < 0 and close < high * 0.999 and (overbought or close > vwap_upper) and daily_trades < max_daily_trades
+
+// Setup 4: Absorption Reversal - XRP Enhanced
+absorption_long = enable_absorption and is_absorption and close < vwap_current and delta > 0 and oversold and daily_trades < max_daily_trades
+absorption_short = enable_absorption and is_absorption and close > vwap_current and delta < 0 and overbought and daily_trades < max_daily_trades
+
+// XRP Momentum Breakout Setup (New)
+momentum_long = extreme_volume and close > high[1] and delta > 0 and uptrend and daily_trades < max_daily_trades
+momentum_short = extreme_volume and close < low[1] and delta < 0 and downtrend and daily_trades < max_daily_trades
+
+// Combined Entry Conditions - Enhanced
+long_condition = volume_cluster_long or imbalance_long or unfinished_long or absorption_long or momentum_long
+short_condition = volume_cluster_short or imbalance_short or unfinished_short or absorption_short or momentum_short
+
+// ============================================================================
+// RISK MANAGEMENT & POSITION SIZING
+// ============================================================================
+
+// Calculate position size based on risk per trade
+account_value = strategy.equity
+risk_amount = account_value * (risk_per_trade / 100)
+
+// Dynamic stop loss based on setup type - XRP Optimized
+stop_distance = 0.0
+if volume_cluster_long or volume_cluster_short
+    stop_distance := atr * 1.8  // Tighter for XRP volatility
+else if imbalance_long or imbalance_short
+    stop_distance := atr * 1.2  // Reduced for quick XRP moves
+else if unfinished_long or unfinished_short
+    stop_distance := atr * 0.8  // Very tight for reversal setups
+else if absorption_long or absorption_short
+    stop_distance := atr * 2.0  // Reduced from 2.5
+else if momentum_long or momentum_short
+    stop_distance := atr * 1.5  // New momentum setup stops
+
+// Position size calculation
+position_size = risk_amount / stop_distance
+
+// Trailing stop for XRP momentum
+var float trail_stop_long = na
+var float trail_stop_short = na
+
+if strategy.position_size > 0
+    trail_stop_long := na(trail_stop_long) ? close - stop_distance : math.max(trail_stop_long, close - stop_distance)
+if strategy.position_size < 0
+    trail_stop_short := na(trail_stop_short) ? close + stop_distance : math.min(trail_stop_short, close + stop_distance)
+
+// ============================================================================
+// STRATEGY EXECUTION
+// ============================================================================
+
+// Entry Logic - XRP Enhanced
+if long_condition and strategy.position_size == 0
+    strategy.entry("Long", strategy.long, qty=position_size)
+    daily_trades += 1
+    trail_stop_long := na  // Reset trailing stop
+
+if short_condition and strategy.position_size == 0
+    strategy.entry("Short", strategy.short, qty=position_size)
+    daily_trades += 1
+    trail_stop_short := na  // Reset trailing stop
+
+// Exit Logic - XRP Enhanced with Trailing Stops
+if strategy.position_size > 0  // Long position
+    // Profit target
+    profit_target = close + stop_distance * reward_ratio
+    
+    // Use trailing stop if in profit, otherwise use fixed stop
+    current_stop = strategy.position_avg_price > 0 and close > strategy.position_avg_price * 1.01 ? trail_stop_long : close - stop_distance
+    
+    strategy.exit("Long Exit", "Long", 
+                 stop=current_stop, 
+                 limit=profit_target)
+
+if strategy.position_size < 0  // Short position
+    // Profit target
+    profit_target = close - stop_distance * reward_ratio
+    
+    // Use trailing stop if in profit, otherwise use fixed stop
+    current_stop = strategy.position_avg_price > 0 and close < strategy.position_avg_price * 0.99 ? trail_stop_short : close + stop_distance
+    
+    strategy.exit("Short Exit", "Short", 
+                 stop=current_stop, 
+                 limit=profit_target)
+
+// ============================================================================
+// VISUAL INDICATORS & FOOTPRINT DISPLAY
+// ============================================================================
+
+// Color definitions
+color_imbalance_up = color.new(color.green, 20)
+color_imbalance_down = color.new(color.red, 20)
+color_volume_cluster = color.new(color.blue, 30)
+color_absorption = color.new(color.orange, 40)
+color_unfinished = color.new(color.purple, 30)
+
+// VWAP and Value Area
+plot(vwap, "VWAP", color=color.yellow, linewidth=2)
+plot(value_area_high, "Value Area High", color=color.gray, style=plot.style_line)
+plot(value_area_low, "Value Area Low", color=color.gray, style=plot.style_line)
+
+// Volume Clusters
+bgcolor(show_volume_clusters and is_volume_cluster ? color_volume_cluster : na, title="Volume Cluster")
+
+// Imbalances
+bgcolor(show_imbalances and imbalance_up ? color_imbalance_up : na, title="Imbalance Up")
+bgcolor(show_imbalances and imbalance_down ? color_imbalance_down : na, title="Imbalance Down")
+
+// Absorption
+bgcolor(show_footprints and is_absorption ? color_absorption : na, title="Absorption")
+
+// Unfinished Business
+bgcolor(show_unfinished_business and unfinished_business ? color_unfinished : na, title="Unfinished Business")
+
+// Footprint Data Labels
+if show_footprints and barstate.islast
+    // Current bar footprint data
+    label.new(bar_index, high * 1.01, 
+             text="Bid: " + str.tostring(math.round(bid_volume)) + "\nAsk: " + str.tostring(math.round(ask_volume)) + "\nΔ: " + str.tostring(math.round(delta)),
+             style=label.style_label_down, 
+             color=delta > 0 ? color.green : color.red,
+             textcolor=color.white,
+             size=size.small)
+
+// Volume Profile Levels
+if show_footprints
+    line.new(bar_index-10, vp_high, bar_index, vp_high, color=color.blue, width=1, style=line.style_dashed)
+    line.new(bar_index-10, vp_low, bar_index, vp_low, color=color.blue, width=1, style=line.style_dashed)
+
+// Entry Signals
+plotshape(long_condition, "Long Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
+plotshape(short_condition, "Short Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
+
+
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+// Setup-specific alerts
+alertcondition(volume_cluster_long, "Volume Cluster Long", "Volume cluster breakout - Long setup detected")
+alertcondition(volume_cluster_short, "Volume Cluster Short", "Volume cluster breakdown - Short setup detected")
+alertcondition(imbalance_long, "Imbalance Long", "Order flow imbalance - Long continuation setup")
+alertcondition(imbalance_short, "Imbalance Short", "Order flow imbalance - Short continuation setup")
+alertcondition(unfinished_long, "Unfinished Business Long", "Failed auction reversal - Long setup")
+alertcondition(unfinished_short, "Unfinished Business Short", "Failed auction reversal - Short setup")
+alertcondition(absorption_long, "Absorption Long", "Volume absorption - Long reversal setup")
+alertcondition(absorption_short, "Absorption Short", "Volume absorption - Short reversal setup")
+
+// ============================================================================
+// INFORMATION TABLE
+// ============================================================================
+
+if show_footprints and barstate.islast
+    var table info_table = table.new(position.top_right, 2, 12, bgcolor=color.white, border_width=1)
+    
+    // Headers
+    table.cell(info_table, 0, 0, "Order Flow Metrics", text_color=color.black, bgcolor=color.gray)
+    table.cell(info_table, 1, 0, "Value", text_color=color.black, bgcolor=color.gray)
+    
+    // Volume Data
+    table.cell(info_table, 0, 1, "Volume", text_color=color.black)
+    table.cell(info_table, 1, 1, str.tostring(math.round(volume)), text_color=color.black)
+    
+    table.cell(info_table, 0, 2, "Bid Volume", text_color=color.black)
+    table.cell(info_table, 1, 2, str.tostring(math.round(bid_volume)), text_color=color.red)
+    
+    table.cell(info_table, 0, 3, "Ask Volume", text_color=color.black)
+    table.cell(info_table, 1, 3, str.tostring(math.round(ask_volume)), text_color=color.green)
+    
+    // Delta Data
+    table.cell(info_table, 0, 4, "Delta", text_color=color.black)
+    table.cell(info_table, 1, 4, str.tostring(math.round(delta)), 
+              text_color=delta > 0 ? color.green : color.red)
+    
+    table.cell(info_table, 0, 5, "Cumulative Δ", text_color=color.black)
+    table.cell(info_table, 1, 5, str.tostring(math.round(cumulative_delta)), 
+              text_color=cumulative_delta > 0 ? color.green : color.red)
+    
+    // Setup Status
+    table.cell(info_table, 0, 6, "Volume Cluster", text_color=color.black)
+    table.cell(info_table, 1, 6, is_volume_cluster ? "YES" : "NO", 
+              text_color=is_volume_cluster ? color.green : color.red)
+    
+    table.cell(info_table, 0, 7, "Imbalance", text_color=color.black)
+    table.cell(info_table, 1, 7, has_imbalance ? "YES" : "NO", 
+              text_color=has_imbalance ? color.orange : color.gray)
+    
+    table.cell(info_table, 0, 8, "Absorption", text_color=color.black)
+    table.cell(info_table, 1, 8, is_absorption ? "YES" : "NO", 
+              text_color=is_absorption ? color.orange : color.gray)
+    
+    table.cell(info_table, 0, 9, "Unfinished Biz", text_color=color.black)
+    table.cell(info_table, 1, 9, unfinished_business ? "YES" : "NO", 
+              text_color=unfinished_business ? color.purple : color.gray)
+    
+    // Trade Info
+    table.cell(info_table, 0, 10, "Daily Trades", text_color=color.black)
+    table.cell(info_table, 1, 10, str.tostring(daily_trades) + "/" + str.tostring(max_daily_trades), text_color=color.black)
+    
+    table.cell(info_table, 0, 11, "Position", text_color=color.black)
+    position_text = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    position_color = strategy.position_size > 0 ? color.green : strategy.position_size < 0 ? color.red : color.gray
+    table.cell(info_table, 1, 11, position_text, text_color=position_color)
