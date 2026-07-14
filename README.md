@@ -37,26 +37,21 @@ The diagrams below demonstrate how data flows through the application layers:
 
 ```mermaid
 flowchart TD
-    classDef external fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef engine fill:#bbf,stroke:#333,stroke-width:1px;
-    classDef api fill:#bfb,stroke:#333,stroke-width:1px;
-    classDef ui fill:#fbb,stroke:#333,stroke-width:1px;
-
-    Binance[Binance Public API]:::external
+    Binance[Binance Public API]
     
     subgraph BackendEngine [Python Core Engine]
-        Fetcher[BinanceDataFetcher\nengine/data_fetcher.py]:::engine
-        Calculator[OrderFlowCalculator\nengine/order_flow.py]:::engine
-        Backtester[OrderFlowBacktester\nengine/backtester.py]:::engine
+        Fetcher[BinanceDataFetcher<br>engine/data_fetcher.py]
+        Calculator[OrderFlowCalculator<br>engine/order_flow.py]
+        Backtester[OrderFlowBacktester<br>engine/backtester.py]
     end
 
     subgraph Server [API Layer]
-        FastAPI[FastAPI Server\nmain_api.py]:::api
+        FastAPI[FastAPI Server<br>main_api.py]
     end
 
     subgraph Clients [Frontend Dashboards]
-        ReactDash[React Dashboard\nhosted on GitHub Pages]:::ui
-        StreamlitDash[Streamlit Dashboard\napp.py]:::ui
+        ReactDash[React Dashboard<br>hosted on GitHub Pages]
+        StreamlitDash[Streamlit Dashboard<br>app.py]
     end
 
     %% Data flow mapping
