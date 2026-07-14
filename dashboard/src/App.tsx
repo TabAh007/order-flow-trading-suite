@@ -143,6 +143,11 @@ function App() {
             <span className="status-dot"></span>
             {connected ? 'Live Engine (Client-Side)' : 'Network Offline'}
           </div>
+          {!connected && (
+            <p className="status-help-text">
+              Unable to load market data. If the site was recently updated, please wait 1-2 minutes for the deployment to finish and do a hard refresh (Cmd+Shift+R or Ctrl+F5).
+            </p>
+          )}
         </div>
       </aside>
 

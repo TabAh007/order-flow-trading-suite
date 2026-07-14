@@ -154,6 +154,13 @@ body {
   font-weight: 500;
 }
 
+.status-help-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
